@@ -8,3 +8,4 @@ dist/
 build/
 storage/documentos/
 node_modules/
+.vite/
