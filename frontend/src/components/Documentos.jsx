@@ -372,7 +372,8 @@ function ListaDocumentos({ documentos, alError, alCambiar }) {
                         {a && <small>Confianza {Math.round((a.confianza || 0) * 100)}%</small>}
                         {!a && d.analisis_error && <small className="error-texto">{d.analisis_error}</small>}
                       </td>
-                      <td className="acciones-fila">
+                      <td>
+                       <div className="acciones-fila">
                         {(a || d.analisis_error) && (
                           <button className="secundario" onClick={() => setAbierto(abierto === d.id ? "" : d.id)}>
                             {abierto === d.id ? "Ocultar" : "Ver análisis"}
@@ -388,6 +389,7 @@ function ListaDocumentos({ documentos, alError, alCambiar }) {
                             Analizar de nuevo
                           </button>
                         )}
+                       </div>
                       </td>
                     </tr>
                     {abierto === d.id && (

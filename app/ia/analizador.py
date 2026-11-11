@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 
 from app.config.settings import configuracion
 from app.ia.catalogos import CATEGORIAS, PERIODOS, TIPOS_DOCUMENTO, calcular_periodo
@@ -81,6 +82,18 @@ Campos adicionales:
 
 Los periodos académicos ({", ".join(PERIODOS)}) se calculan después a partir de las fechas.
 """
+
+def instrucciones_con_fecha() -> str:
+    """El modelo no sabe qué día es: se lo decimos para que no tome por error una fecha
+    reciente como futura o inconsistente."""
+    hoy = date.today().isoformat()
+    return (
+        f"{INSTRUCCIONES}\n"
+        f"FECHA ACTUAL: {hoy}. Usa esta fecha como referencia. Tu conocimiento puede terminar antes de esta fecha, "
+        f"así que NO marques como error, inconsistencia ni errata una fecha del documento solo porque su año "
+        f"te parezca reciente o futuro. Solo repórtala si es posterior a {hoy}, o si el propio documento se contradice."
+    )
+
 
 ESQUEMA_RESPUESTA = {
     "type": "object",
@@ -232,7 +245,7 @@ class AnalizadorGemini:
                 "Analiza este documento probatorio y responde en el JSON indicado.",
             ],
             config=types.GenerateContentConfig(
-                system_instruction=INSTRUCCIONES,
+                system_instruction=instrucciones_con_fecha(),
                 response_mime_type="application/json",
                 response_schema=ESQUEMA_RESPUESTA,
                 temperature=0.1,
