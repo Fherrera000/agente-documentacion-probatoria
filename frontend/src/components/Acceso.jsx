@@ -40,9 +40,21 @@ export default function Acceso({ alEntrar, aviso }) {
   }
 
   const registro = modo === "registro";
+  const reglas = [
+    ["10 o más caracteres", contrasena.length >= 10],
+    ["Una mayúscula", /[A-Z]/.test(contrasena)],
+    ["Una minúscula", /[a-z]/.test(contrasena)],
+    ["Un número", /\d/.test(contrasena)],
+    ["Un carácter especial", /[^A-Za-z0-9]/.test(contrasena)],
+  ];
+  const contrasenaValida = reglas.every(([, cumple]) => cumple);
 
   return (
     <section className="tarjeta acceso">
+      <div className="bienvenida">
+        <h1>{registro ? "Crea tu cuenta" : "Bienvenido(a)"}</h1>
+        <p>Gestiona y organiza tu documentación probatoria docente.</p>
+      </div>
       <div className="pestanas" role="tablist">
         <button role="tab" aria-selected={!registro} className={!registro ? "activa" : ""} onClick={() => cambiarModo("entrar")}>
           Iniciar sesión
@@ -78,9 +90,15 @@ export default function Acceso({ alEntrar, aviso }) {
             maxLength={128}
             autoComplete={registro ? "new-password" : "current-password"}
           />
-          {registro && <small>Mínimo 10 caracteres.</small>}
+          {registro && (
+            <ul className="requisitos">
+              {reglas.map(([texto, cumple]) => (
+                <li key={texto} className={cumple ? "cumple" : ""}>{texto}</li>
+              ))}
+            </ul>
+          )}
         </label>
-        <button type="submit" disabled={enviando}>
+        <button type="submit" disabled={enviando || (registro && !contrasenaValida)}>
           {enviando ? "Un momento…" : registro ? "Crear cuenta" : "Entrar"}
         </button>
       </form>

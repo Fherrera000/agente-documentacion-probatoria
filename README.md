@@ -223,7 +223,7 @@ Las pruebas automáticas **nunca llaman a Gemini** (aunque tengas la llave en `.
 1. **`GET /database`** › *Try it out* › *Execute*. Debe responder `{"mongodb": "conectado"}`.
 2. **`POST /auth/registro`** para crear un profesor (contraseña de **mínimo 10 caracteres**):
    ```json
-   { "nombre": "Profesor Prueba", "correo": "prueba@ejemplo.com", "contrasena": "MiClave12345" }
+   { "nombre": "Profesor Prueba", "correo": "prueba@ejemplo.com", "contrasena": "MiClave12345!" }
    ```
 3. **`POST /auth/login`** con el mismo correo y contraseña. Copia el `access_token` de la respuesta (sin comillas).
 4. Presiona **Authorize** (arriba a la derecha), pega **solo el token** (sin escribir "Bearer"), presiona **Authorize** y **Close**. Los candados se cierran.
@@ -262,6 +262,8 @@ Usan `mongomock` (MongoDB simulado en memoria): **no necesitan MongoDB ni Docker
 
 ```powershell
 python -m pytest -v
+ó
+docker run --rm -v ${PWD}:/work -w /work python:3.13-slim sh -c "pip install -q -r requirements-dev.txt && python -m pytest -v"
 ```
 
 Todas deben salir **PASSED**. Para una sola prueba:

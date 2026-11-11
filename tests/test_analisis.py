@@ -275,3 +275,11 @@ def test_error_de_ia_se_guarda_con_mensaje_para_el_usuario(cliente_api, almacena
     detalle = cliente_api.get(f"/documentos/{documento_id}", headers=headers).json()
     assert detalle["analisis_estado"] == "error"
     assert "saturados" in detalle["analisis_error"]
+
+
+def test_instrucciones_incluyen_fecha_actual():
+    from datetime import date
+    from app.ia.analizador import instrucciones_con_fecha
+
+    texto = instrucciones_con_fecha()
+    assert f"FECHA ACTUAL: {date.today().isoformat()}" in texto
