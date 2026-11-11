@@ -1,0 +1,39 @@
+# Entorno de desarrollo completo: API + MongoDB.
+# Uso:  docker compose up --build      (detener: Ctrl+C  o  docker compose down)
+services:
+  mongo:
+    image: mongo:8
+    container_name: adp-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"            # para conectarse con MongoDB Compass
+    volumes:
+      - mongo_data:/data/db      # los datos sobreviven al apagar el contenedor
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: adp-api
+    env_file: .env
+    environment:
+      # Dentro de Docker, MongoDB se llama "mongo", no "localhost".
+      MONGODB_URI: mongodb://mongo:27017/
+      STORAGE_PATH: /app/storage
+      # Recarga automática al guardar cambios desde Windows.
+      WATCHFILES_FORCE_POLLING: "true"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app           # el código de VS Code se ve dentro del contenedor
+      - ./storage:/app/storage   # los archivos subidos quedan en la carpeta del proyecto
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
