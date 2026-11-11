@@ -1,4 +1,4 @@
-# Entorno de desarrollo completo: API + MongoDB.
+# Entorno de desarrollo completo: interfaz web + API + MongoDB.
 # Uso:  docker compose up --build      (detener: Ctrl+C  o  docker compose down)
 services:
   mongo:
@@ -35,5 +35,23 @@ services:
       mongo:
         condition: service_healthy
 
+  web:
+    image: node:22-alpine
+    container_name: adp-web
+    working_dir: /web
+    # Instala dependencias (solo tarda la primera vez) y arranca Vite.
+    command: sh -c "npm install && npm run dev"
+    environment:
+      API_URL: http://api:8000     # Vite reenvía /api/... a la API dentro de Docker
+      VITE_POLLING: "true"         # recarga automática al guardar desde Windows
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/web
+      - web_node_modules:/web/node_modules   # node_modules vive en Docker, no en tu carpeta
+    depends_on:
+      - api
+
 volumes:
   mongo_data:
+  web_node_modules:

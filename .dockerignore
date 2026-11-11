@@ -11,3 +11,4 @@ tests/
 dist/
 build/
 *.md
+frontend/
