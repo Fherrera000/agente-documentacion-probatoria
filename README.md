@@ -1,63 +1,150 @@
 # Agente Inteligente de Documentación Probatoria
 
-Backend inicial del proyecto con **FastAPI + MongoDB**. Implementa registro e inicio de sesión, perfil del profesor, expedientes y registro/listado de documentos. El aislamiento multitenant se realiza filtrando cada operación por el profesor obtenido del token JWT.
+Backend del proyecto con **FastAPI + MongoDB** (versión 0.3.0). Implementa registro e inicio de sesión de profesores, perfil, expedientes, y carga y descarga de documentos. El aislamiento multitenant se logra filtrando cada operación por el profesor que viene en el token JWT.
 
-## Requisitos
-- Python 3.13 (probado como entorno objetivo)
-- MongoDB local iniciado o URI de MongoDB Atlas
+Hay dos formas de correr el proyecto:
 
-## Instalación en Windows PowerShell
+| Forma | Cuándo usarla | Qué necesitas |
+|---|---|---|
+| **A. Con Docker** (recomendada) | Para usar y probar la API. Levanta la API y MongoDB con un solo comando. | Docker Desktop |
+| **B. Local con Python** | Para correr las pruebas automáticas, o si no tienes Docker. | Python 3.13 y MongoDB instalado |
+
+Lo normal es usar las dos: **Docker para correr la API** y el **entorno de Python para las pruebas**.
+
+---
+
+## 1. Requisitos (una sola vez)
+
+| Programa | Descarga | Notas |
+|---|---|---|
+| Git | https://git-scm.com/download/win | Opciones por defecto. |
+| Visual Studio Code | https://code.visualstudio.com | Instala la extensión **Python** (Microsoft). |
+| Python 3.13 | https://www.python.org/downloads | Marca **"Add Python to PATH"** al instalar. |
+| Docker Desktop | https://www.docker.com/products/docker-desktop | Para la forma A. Debe estar abierto al usarlo. |
+| MongoDB Compass (opcional) | https://www.mongodb.com/try/download/compass | Para ver los datos de la base. |
+| MongoDB Community Server | https://www.mongodb.com/try/download/community | Solo para la forma B. Deja marcado **"Install MongoD as a Service"**. |
+
+> **Consejo para Windows:** si tu disco C: tiene poco espacio, en Docker Desktop ve a **Settings › Resources › Advanced › Disk image location** y elige una carpeta en otro disco (por ejemplo `D:\Docker`). Ahí se guardan las imágenes y los datos de MongoDB.
+
+---
+
+## 2. Clonar el repositorio en VS Code
+
+1. Abre VS Code y presiona **Ctrl + Shift + P**.
+2. Escribe **Git: Clone** y pega:
+   ```
+   https://github.com/Fherrera000/agente-documentacion-probatoria.git
+   ```
+3. Elige la carpeta donde quieres guardarlo y presiona **Open** (no "Add to Workspace").
+4. Si pregunta *"Do you trust the authors?"*, elige **Yes, I trust the authors**.
+
+---
+
+## 3. Crear el archivo `.env` (obligatorio en ambas formas)
+
+El archivo `.env` guarda la configuración y la clave secreta. **No se sube a GitHub** (está en `.gitignore`), así que cada quien crea el suyo.
+
+En la terminal de VS Code (**Terminal › New Terminal**):
+
+```powershell
+Copy-Item .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Copia el texto largo que imprime el segundo comando. Abre el archivo **`.env`** (no `.env.example`) y pégalo en la línea:
+
+```
+JWT_SECRET=el_texto_largo_que_copiaste
+```
+
+Guarda con **Ctrl + S**.
+
+> **Importante:** nunca pongas tu clave en `.env.example`. Ese archivo sí se sube a GitHub y la clave quedaría pública.
+>
+> Si VS Code muestra el aviso *"An environment file is configured but terminal environment injection is disabled"*, presiona **Don't Show Again**. No hace falta: el proyecto ya lee el `.env` por su cuenta.
+
+---
+
+## 4A. Correr con Docker (recomendado)
+
+Con Docker Desktop abierto, en la terminal de VS Code, dentro de la carpeta del proyecto:
+
+```powershell
+docker compose up -d --build
+```
+
+- La primera vez tarda unos minutos (descarga Python y MongoDB).
+- `-d` lo deja corriendo en segundo plano.
+- Revisa que esté arriba con `docker compose ps`: deben aparecer **adp-api** (`Up`) y **adp-mongo** (`Up (healthy)`).
+
+Abre **http://127.0.0.1:8000/docs**.
+
+| Para... | Comando |
+|---|---|
+| Ver los mensajes de la API | `docker compose logs -f api` (salir con Ctrl + C; no apaga nada) |
+| Apagar todo | `docker compose down` |
+| Volver a encender | `docker compose up -d` |
+| Reiniciar solo la API | `docker compose restart api` |
+| Reconstruir tras cambiar `requirements.txt` | `docker compose up -d --build` |
+
+Notas:
+- Al guardar cambios en `app/` desde VS Code, la API se recarga sola.
+- Los datos de MongoDB se guardan en el volumen `mongo_data` y **no se pierden** al apagar.
+- Los archivos subidos quedan en la carpeta `storage/` del proyecto (no se suben a GitHub).
+- MongoDB Compass se conecta con `mongodb://localhost:27017`. La base se llama `agente_documentacion_probatoria`.
+- No corras al mismo tiempo `uvicorn` local (puerto 8000) ni un MongoDB instalado en Windows (puerto 27017): chocan con Docker.
+
+---
+
+## 4B. Correr local con Python
+
 ```powershell
 py -3.13 -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
+pip install -r requirements-dev.txt
 ```
-Edita `.env` y configura `MONGODB_URI`, `MONGODB_DATABASE` y una clave `JWT_SECRET` larga y aleatoria. Después:
+
+- Si `Activate.ps1` da error de *"ejecución de scripts deshabilitada"*, corre `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, responde **S** y vuelve a activar.
+- Al activarse, la terminal muestra **(.venv)** al inicio.
+- En VS Code: **Ctrl + Shift + P › Python: Select Interpreter** y elige la opción con **`.venv`**.
+
+Con el servicio de MongoDB encendido (`Get-Service *mongo*` debe decir `Running`):
+
 ```powershell
 uvicorn app.main:app --reload
 ```
-Abre `http://127.0.0.1:8000/docs`.
 
-## Flujo de prueba
-1. `POST /auth/registro` para crear un profesor.
-2. `POST /auth/login` para obtener el token.
-3. En Swagger pulsa **Authorize** y pega el token (Bearer).
-4. `GET /profesores/yo` para verificar la identidad.
-5. `POST /expedientes` para crear un expediente.
-6. `POST /documentos` para registrar metadatos de un documento dentro de un expediente propio.
+Abre **http://127.0.0.1:8000/docs**.
 
-## Colecciones e índices
-- `profesores`: correo único, nombre, hash de contraseña y estado.
-- `expedientes`: `profesor_id`, título, categoría y fecha.
-- `documentos`: `profesor_id`, `expediente_id`, metadatos y ruta de almacenamiento.
+---
 
-## Importante sobre seguridad y alcance
-- El `profesor_id` no se recibe en las rutas: se obtiene del JWT validado.
-- Las consultas de expedientes y documentos siempre incluyen el `profesor_id` autenticado.
-- La contraseña se almacena con hash Argon2; nunca en texto plano.
-- El registro de documentos **solo guarda metadatos y una ruta**; todavía no carga archivos ni implementa OCR.
-- Este es un punto de partida para desarrollo local, no una versión lista para producción. Antes de usar datos reales se deben añadir HTTPS, gestión segura de secretos, recuperación de cuenta, límites de intentos, auditoría, validación de archivos, almacenamiento privado y pruebas automatizadas de acceso cruzado entre profesores.
-- El dataset sintético debe permanecer separado en `dataset_documentos`; no mezclarlo con los expedientes privados.
+## 5. Probar la API en `/docs`
 
-## Carga y descarga de documentos (versión 0.3.0)
+1. **`GET /database`** › *Try it out* › *Execute*. Debe responder `{"mongodb": "conectado"}`.
+2. **`POST /auth/registro`** para crear un profesor (contraseña de **mínimo 10 caracteres**):
+   ```json
+   { "nombre": "Profesor Prueba", "correo": "prueba@ejemplo.com", "contrasena": "MiClave12345" }
+   ```
+3. **`POST /auth/login`** con el mismo correo y contraseña. Copia el `access_token` de la respuesta (sin comillas).
+4. Presiona **Authorize** (arriba a la derecha), pega **solo el token** (sin escribir "Bearer"), presiona **Authorize** y **Close**. Los candados se cierran.
+5. **`GET /profesores/yo`** debe mostrar tus datos.
+6. **`POST /expedientes`** para crear un expediente.
+7. **`POST /documentos/subir`** para subir un archivo a ese expediente.
 
-La API permite cargar archivos físicos asociados a expedientes propios. Los archivos se guardan en `storage/documentos/<profesor_id>/` con un nombre interno aleatorio; MongoDB conserva los metadatos y la clave de almacenamiento.
+> El token dura 60 minutos (`JWT_EXPIRE_MINUTES`). Si todo empieza a dar **401**, haz login de nuevo y pega el token nuevo en Authorize (primero *Logout*).
 
-### Endpoint de carga
+### Carga y descarga de documentos
 
-`POST /documentos/subir` (requiere Bearer token, `multipart/form-data`):
-- `expediente_id`: identificador del expediente del profesor autenticado.
-- `archivo`: archivo PDF, JPG/JPEG o PNG.
-- `tipo_documento`: campo opcional.
+Los archivos se guardan en `storage/documentos/<profesor_id>/` con un nombre interno aleatorio; MongoDB guarda los metadatos y la clave de almacenamiento.
 
-Tamaño máximo predeterminado: 10 MB. Se valida la extensión y la firma básica del contenido. El límite y la ruta se pueden configurar con `MAX_UPLOAD_SIZE_MB` y `STORAGE_PATH` en `.env`.
+`POST /documentos/subir` (requiere token, `multipart/form-data`):
+- `expediente_id`: identificador de un expediente propio.
+- `archivo`: PDF, JPG/JPEG o PNG. Máximo 10 MB (`MAX_UPLOAD_SIZE_MB`). Se valida la extensión y la firma del contenido.
+- `tipo_documento`: opcional.
 
-### Endpoint de descarga
+`GET /documentos/{documento_id}/descargar` (requiere token): solo descarga archivos del profesor autenticado.
 
-`GET /documentos/{documento_id}/descargar` (requiere Bearer token). Solo permite descargar archivos asociados al profesor autenticado.
-
-### Ejemplo PowerShell
+Ejemplo desde PowerShell:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/documentos/subir" `
@@ -67,13 +154,68 @@ curl.exe -X POST "http://127.0.0.1:8000/documentos/subir" `
   -F "archivo=@C:\\Documentos\\constancia.pdf"
 ```
 
-Para ejecutar las pruebas automatizadas:
+---
+
+## 6. Pruebas automáticas
+
+Usan `mongomock` (MongoDB simulado en memoria): **no necesitan MongoDB ni Docker** y no tocan datos reales. Con el `(.venv)` activo:
 
 ```powershell
-pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-Las pruebas de carga y descarga usan un directorio temporal. No escriben archivos en el almacenamiento de desarrollo.
+Todas deben salir **PASSED**. Para una sola prueba:
 
-**Nota de despliegue:** el almacenamiento local es adecuado para desarrollo y pruebas en una sola instancia. Para producción con varias instancias de FastAPI, conviene sustituirlo por almacenamiento de objetos privado (por ejemplo, un bucket) y mantener autorización por profesor antes de generar descargas.
+```powershell
+python -m pytest tests/test_api.py::test_profesor_no_puede_consultar_expediente_de_otro -v
+```
+
+Cubren registro, inicio de sesión, perfil, validación, expedientes, documentos, carga y descarga, el esquema de Authorize y el aislamiento entre profesores. Cada función nueva debe llevar su prueba.
+
+---
+
+## 7. Cómo trabajamos con Git
+
+1. **Antes de empezar:** cambia a `main` (clic en el nombre de la rama, abajo a la izquierda) y presiona **Sync** para traer lo último.
+2. **Crea una rama** para tu tarea: **Ctrl + Shift + P › Git: Create Branch...** (por ejemplo `interfaz-carga`). No trabajes directo en `main`.
+3. **Haz commits pequeños** desde **Source Control**: marca los archivos con **+**, escribe un mensaje claro (por ejemplo *"Agrega validación de tamaño de archivo"*) y presiona **Commit**.
+4. **Corre las pruebas** antes de publicar.
+5. **Publica** con **Publish Branch** (o **Sync** si ya existe) y abre un **Pull Request** en GitHub.
+6. Otro integrante revisa y hace **Merge** a `main`.
+
+Nunca subas: `.env`, `.venv/`, `storage/documentos/` (ya están en `.gitignore`).
+
+---
+
+## 8. Problemas comunes
+
+| Problema | Solución |
+|---|---|
+| *"No se pudo conectar con MongoDB"* | Docker: revisa `docker compose ps`. Local: inicia el servicio en `services.msc` › **MongoDB Server**. |
+| Compass: `ECONNREFUSED 127.0.0.1:27017` | MongoDB no está encendido (ver fila anterior). |
+| `py -3.13` no encuentra Python | Revisa las versiones con `py --list`; instala Python 3.13. |
+| Error al activar `.venv` | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| `port is already allocated` en Docker | Algo más usa el 8000 o el 27017: apaga `uvicorn` local o el servicio de MongoDB de Windows. |
+| Todo responde **401** | Token vencido o mal pegado: login de nuevo y Authorize con el token nuevo. |
+| `/docs` no refleja un cambio | `docker compose restart api` y recarga con **Ctrl + F5**. |
+
+---
+
+## Colecciones e índices
+
+- `profesores`: correo único, nombre, hash de contraseña y estado.
+- `expedientes`: `profesor_id`, título, categoría y fecha.
+- `documentos`: `profesor_id`, `expediente_id`, metadatos y ruta de almacenamiento.
+
+## Seguridad y alcance
+
+- El `profesor_id` no se recibe en las rutas: se obtiene del JWT validado.
+- Las consultas de expedientes y documentos siempre incluyen el `profesor_id` autenticado.
+- La contraseña se almacena con hash Argon2, nunca en texto plano.
+- Todavía no hay OCR ni análisis con IA de los documentos.
+- Es un punto de partida para desarrollo local, no una versión lista para producción. Antes de usar datos reales se deben añadir HTTPS, gestión segura de secretos, recuperación de cuenta, límites de intentos, auditoría, almacenamiento privado y más pruebas de acceso cruzado entre profesores.
+- El dataset sintético debe permanecer separado en `dataset_documentos`; no mezclarlo con los expedientes privados.
+
+## Despliegue
+
+El almacenamiento local sirve para desarrollo con una sola instancia. Para producción con varias instancias conviene usar almacenamiento de objetos privado (por ejemplo, un bucket de Cloud Storage) y mantener la autorización por profesor antes de generar descargas. El `Dockerfile` ya está preparado para Cloud Run: usa la variable `PORT` que asigna el servicio.
