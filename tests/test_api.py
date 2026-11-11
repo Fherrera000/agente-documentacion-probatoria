@@ -35,12 +35,12 @@ def registrar_y_entrar(cliente, correo="ana@example.com"):
     respuesta = cliente.post("/auth/registro", json={
         "nombre": "Ana Profesora",
         "correo": correo,
-        "contrasena": "ContrasenaSegura123"
+        "contrasena": "ContrasenaSegura123!"
     })
     assert respuesta.status_code == 201, respuesta.text
     respuesta_login = cliente.post("/auth/login", json={
         "correo": correo,
-        "contrasena": "ContrasenaSegura123"
+        "contrasena": "ContrasenaSegura123!"
     })
     assert respuesta_login.status_code == 200, respuesta_login.text
     token = respuesta_login.json()["access_token"]
@@ -72,7 +72,7 @@ def test_no_permite_correo_duplicado(cliente_api):
     respuesta = cliente_api.post("/auth/registro", json={
         "nombre": "Otra profesora",
         "correo": "ana@example.com",
-        "contrasena": "ContrasenaSegura123"
+        "contrasena": "ContrasenaSegura123!"
     })
     assert respuesta.status_code == 409
 
@@ -272,3 +272,20 @@ def test_docs_usa_esquema_bearer_para_authorize(cliente_api):
 def test_rechaza_token_mal_formado(cliente_api):
     assert cliente_api.get("/profesores/yo", headers={"Authorization": "Bearer no-es-un-jwt"}).status_code == 401
     assert cliente_api.get("/profesores/yo", headers={"Authorization": "Basic abc123"}).status_code == 401
+
+
+@pytest.mark.parametrize("contrasena, falta", [
+    ("contrasenasegura123!", "mayúscula"),
+    ("CONTRASENASEGURA123!", "minúscula"),
+    ("ContrasenaSegura!!!!", "número"),
+    ("ContrasenaSegura1234", "especial"),
+    ("Corta1!a", "String should have at least 10"),
+])
+def test_registro_rechaza_contrasena_debil(cliente_api, contrasena, falta):
+    respuesta = cliente_api.post("/auth/registro", json={
+        "nombre": "Ana Profesora",
+        "correo": "ana@example.com",
+        "contrasena": contrasena,
+    })
+    assert respuesta.status_code == 422
+    assert falta in respuesta.text
