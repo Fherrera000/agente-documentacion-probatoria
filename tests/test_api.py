@@ -260,3 +260,15 @@ def test_profesor_no_puede_descargar_archivo_de_otro(cliente_api, monkeypatch, t
 def test_descarga_requiere_autenticacion(cliente_api):
     respuesta = cliente_api.get("/documentos/" + "0" * 24 + "/descargar")
     assert respuesta.status_code == 401
+
+
+def test_docs_usa_esquema_bearer_para_authorize(cliente_api):
+    """El botón Authorize de /docs debe pedir un token, no usuario y contraseña."""
+    esquemas = cliente_api.get("/openapi.json").json()["components"]["securitySchemes"]
+    assert esquemas["TokenJWT"]["type"] == "http"
+    assert esquemas["TokenJWT"]["scheme"].lower() == "bearer"
+
+
+def test_rechaza_token_mal_formado(cliente_api):
+    assert cliente_api.get("/profesores/yo", headers={"Authorization": "Bearer no-es-un-jwt"}).status_code == 401
+    assert cliente_api.get("/profesores/yo", headers={"Authorization": "Basic abc123"}).status_code == 401
