@@ -2,12 +2,19 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from pwdlib import PasswordHash
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from bson import ObjectId
 from app.config.database import base_datos
 from app.config.settings import configuracion
 
-oauth2_esquema = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# Esquema "Bearer": en /docs el botón Authorize muestra un campo para pegar el
+# access_token obtenido en POST /auth/login. auto_error=False permite responder
+# 401 (y no 403) cuando falta el token, igual que antes.
+esquema_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="TokenJWT",
+    description="Pega aquí el access_token que devuelve POST /auth/login (sin la palabra Bearer).",
+)
 hash_contrasenas = PasswordHash.recommended()
 
 def obtener_hash(contrasena: str) -> str:
@@ -21,8 +28,11 @@ def crear_token(profesor_id: str) -> str:
     datos = {"sub": profesor_id, "iat": ahora, "exp": ahora + timedelta(minutes=configuracion.jwt_expire_minutes)}
     return jwt.encode(datos, configuracion.jwt_secret, algorithm=configuracion.jwt_algorithm)
 
-def obtener_profesor_actual(token: str = Depends(oauth2_esquema)):
+def obtener_profesor_actual(credenciales: HTTPAuthorizationCredentials | None = Depends(esquema_bearer)):
     error = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales no válidas", headers={"WWW-Authenticate": "Bearer"})
+    if credenciales is None or credenciales.scheme.lower() != "bearer":
+        raise error
+    token = credenciales.credentials
     try:
         carga = jwt.decode(token, configuracion.jwt_secret, algorithms=[configuracion.jwt_algorithm])
         profesor_id = carga.get("sub")
