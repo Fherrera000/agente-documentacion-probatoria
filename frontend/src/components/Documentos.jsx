@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 
 const CATEGORIAS = {
@@ -12,6 +12,19 @@ const CATEGORIAS = {
 const TIPOS = ["Constancia", "Certificado", "Diploma", "Reconocimiento", "Nombramiento", "Informe", "Otro"];
 
 const EXTENSIONES = [".pdf", ".jpg", ".jpeg", ".png"];
+
+// Estados del análisis con IA (paquete 3.2), igual que en el backend.
+const ESTADOS_ANALISIS = {
+  pendiente: { texto: "En cola", clase: "info" },
+  procesando: { texto: "Analizando…", clase: "info" },
+  completado: { texto: "Analizado", clase: "ok" },
+  revision: { texto: "Requiere revisión", clase: "aviso" },
+  error: { texto: "Error de análisis", clase: "error" },
+  no_configurado: { texto: "IA sin configurar", clase: "neutro" },
+  sin_analizar: { texto: "Sin analizar", clase: "neutro" },
+};
+const ESTADOS_EN_CURSO = ["pendiente", "procesando"];
+const NOMBRE_PERIODO = { MULTI: "Varios periodos", "S/P": "Sin periodo" };
 const MAX_MB = 10; // igual que MAX_UPLOAD_SIZE_MB del backend
 
 function validarArchivo(archivo) {
@@ -68,6 +81,14 @@ export default function Documentos() {
     cargarDocumentos(expedienteId);
   }, [expedienteId]);
 
+  // Mientras la IA analiza algún documento, actualiza la lista cada 2.5 segundos.
+  useEffect(() => {
+    const enCurso = documentos.some((d) => ESTADOS_EN_CURSO.includes(d.analisis_estado));
+    if (!enCurso || !expedienteId) return;
+    const temporizador = setTimeout(() => cargarDocumentos(expedienteId), 2500);
+    return () => clearTimeout(temporizador);
+  }, [documentos, expedienteId]);
+
   const expediente = expedientes.find((e) => e.id === expedienteId);
 
   return (
@@ -117,7 +138,7 @@ export default function Documentos() {
       {expedienteId && (
         <>
           <Carga expedienteId={expedienteId} alSubir={() => cargarDocumentos(expedienteId)} />
-          <ListaDocumentos documentos={documentos} alError={setError} />
+          <ListaDocumentos documentos={documentos} alError={setError} alCambiar={() => cargarDocumentos(expedienteId)} />
         </>
       )}
     </div>
@@ -275,8 +296,9 @@ function Carga({ expedienteId, alSubir }) {
   );
 }
 
-function ListaDocumentos({ documentos, alError }) {
+function ListaDocumentos({ documentos, alError, alCambiar }) {
   const [descargando, setDescargando] = useState("");
+  const [abierto, setAbierto] = useState("");
 
   async function descargar(doc) {
     setDescargando(doc.id);
@@ -297,6 +319,15 @@ function ListaDocumentos({ documentos, alError }) {
     }
   }
 
+  async function reanalizar(doc) {
+    try {
+      await api.analizarDocumento(doc.id);
+      alCambiar();
+    } catch (err) {
+      alError(`No se pudo analizar ${doc.nombre_archivo}: ${err.message}`);
+    }
+  }
+
   return (
     <section className="tarjeta">
       <div className="encabezado">
@@ -310,37 +341,118 @@ function ListaDocumentos({ documentos, alError }) {
           <table>
             <thead>
               <tr>
-                <th>Archivo</th>
-                <th>Tipo</th>
-                <th>Fecha de carga</th>
-                <th>Estado</th>
+                <th>Documento</th>
+                <th>Categoría</th>
+                <th>Periodo</th>
+                <th>Análisis IA</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {documentos.map((d) => (
-                <tr key={d.id}>
-                  <td className="archivo">{d.nombre_archivo}</td>
-                  <td>{d.tipo_documento || "—"}</td>
-                  <td>{formatearFecha(d.fecha_carga)}</td>
-                  <td>
-                    <span className="etiqueta">{d.estado}</span>
-                  </td>
-                  <td>
-                    {d.archivo_subido ? (
-                      <button className="secundario" disabled={descargando === d.id} onClick={() => descargar(d)}>
-                        {descargando === d.id ? "Descargando…" : "Descargar"}
-                      </button>
-                    ) : (
-                      <span className="tenue">Sin archivo</span>
+              {documentos.map((d) => {
+                const a = d.analisis;
+                const estado = ESTADOS_ANALISIS[d.analisis_estado] || { texto: d.estado, clase: "neutro" };
+                // Se puede reintentar siempre: también si un análisis quedó trabado en "Analizando…".
+                const reintentable = Boolean(d.analisis_estado);
+                return (
+                  <Fragment key={d.id}>
+                    <tr>
+                      <td className="archivo">
+                        {a?.titulo_actividad || d.nombre_archivo}
+                        <small>
+                          {d.nombre_archivo}
+                          {a?.tipo_documento_nombre ? ` · ${a.tipo_documento_nombre}` : d.tipo_documento ? ` · ${d.tipo_documento}` : ""}
+                          {` · ${formatearFecha(d.fecha_carga)}`}
+                        </small>
+                      </td>
+                      <td>{a?.categoria_academica ? `${a.categoria_academica} · ${CATEGORIAS[a.categoria_academica]}` : "—"}</td>
+                      <td>{a ? NOMBRE_PERIODO[a.periodo_academico] || a.periodo_academico : "—"}</td>
+                      <td>
+                        <span className={`etiqueta ${estado.clase}`}>{estado.texto}</span>
+                        {a && <small>Confianza {Math.round((a.confianza || 0) * 100)}%</small>}
+                        {!a && d.analisis_error && <small className="error-texto">{d.analisis_error}</small>}
+                      </td>
+                      <td className="acciones-fila">
+                        {(a || d.analisis_error) && (
+                          <button className="secundario" onClick={() => setAbierto(abierto === d.id ? "" : d.id)}>
+                            {abierto === d.id ? "Ocultar" : "Ver análisis"}
+                          </button>
+                        )}
+                        {d.archivo_subido && (
+                          <button className="secundario" disabled={descargando === d.id} onClick={() => descargar(d)}>
+                            {descargando === d.id ? "Descargando…" : "Descargar"}
+                          </button>
+                        )}
+                        {d.archivo_subido && reintentable && (
+                          <button className="secundario" onClick={() => reanalizar(d)} title="Volver a analizar con IA">
+                            Analizar de nuevo
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {abierto === d.id && (
+                      <tr className="detalle">
+                        <td colSpan={5}>
+                          <DetalleAnalisis documento={d} />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
     </section>
+  );
+}
+
+// Vista de solo lectura del análisis. La corrección y validación humana llegan en el paquete 4.1.
+function DetalleAnalisis({ documento }) {
+  const a = documento.analisis;
+  if (!a) return <p className="mensaje error">{documento.analisis_error}</p>;
+  const campos = [
+    ["Tipo de documento", a.tipo_documento_nombre],
+    ["Categoría", a.categoria_academica ? `${a.categoria_academica} · ${CATEGORIAS[a.categoria_academica]}` : null],
+    ["Actividad", a.titulo_actividad],
+    ["Institución emisora", a.institucion_emisora],
+    ["Fecha de emisión", a.fecha_emision],
+    ["Inicio de la actividad", a.fecha_inicio],
+    ["Fin de la actividad", a.fecha_fin],
+    ["Periodo", NOMBRE_PERIODO[a.periodo_academico] || a.periodo_academico],
+    ["Horas", a.horas],
+  ];
+  return (
+    <div className="analisis">
+      {a.resumen && <p className="resumen">{a.resumen}</p>}
+      {a.requiere_revision && a.motivos_revision?.length > 0 && (
+        <div className="mensaje aviso">
+          <strong>Por qué revisar:</strong>
+          <ul>
+            {a.motivos_revision.map((m, i) => (
+              <li key={i}>{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <dl>
+        {campos.map(([nombre, valor]) => (
+          <div key={nombre}>
+            <dt>{nombre}</dt>
+            <dd>{valor ?? <span className="tenue">No aparece en el documento</span>}</dd>
+          </div>
+        ))}
+      </dl>
+      {a.evidencia && (
+        <p className="evidencia">
+          <strong>Evidencia:</strong> “{a.evidencia}”
+        </p>
+      )}
+      <p className="tenue pie">
+        Modelo: {a.modelo} · Texto {a.origen_texto === "pdf" ? "leído del PDF" : "transcrito por la IA (OCR)"} · Confianza{" "}
+        {Math.round((a.confianza || 0) * 100)}%
+      </p>
+    </div>
   );
 }
