@@ -1,15 +1,21 @@
 # Agente Inteligente de Documentación Probatoria
 
-Backend del proyecto con **FastAPI + MongoDB** (versión 0.3.0). Implementa registro e inicio de sesión de profesores, perfil, expedientes, y carga y descarga de documentos. El aislamiento multitenant se logra filtrando cada operación por el profesor que viene en el token JWT.
+Proyecto con **FastAPI + MongoDB** en el backend y **React + Vite** en la interfaz web. El backend (versión 0.3.0) implementa registro e inicio de sesión de profesores, perfil, expedientes, y carga y descarga de documentos. El aislamiento multitenant se logra filtrando cada operación por el profesor que viene en el token JWT.
 
 Hay dos formas de correr el proyecto:
 
 | Forma | Cuándo usarla | Qué necesitas |
 |---|---|---|
-| **A. Con Docker** (recomendada) | Para usar y probar la API. Levanta la API y MongoDB con un solo comando. | Docker Desktop |
-| **B. Local con Python** | Para correr las pruebas automáticas, o si no tienes Docker. | Python 3.13 y MongoDB instalado |
+| **A. Con Docker** (recomendada) | Para usar y probar todo. Levanta la interfaz web, la API y MongoDB con un solo comando. | Docker Desktop |
+| **B. Local con Python y Node.js** | Para correr las pruebas automáticas, o si no tienes Docker. | Python 3.13, MongoDB y Node.js 20 o superior |
 
-Lo normal es usar las dos: **Docker para correr la API** y el **entorno de Python para las pruebas**.
+Lo normal es usar las dos: **Docker para correr el proyecto** y el **entorno de Python para las pruebas**.
+
+| Qué | Dirección |
+|---|---|
+| Interfaz web | http://localhost:5173 |
+| Documentación de la API (Swagger) | http://127.0.0.1:8000/docs |
+| MongoDB (Compass) | `mongodb://localhost:27017` |
 
 ---
 
@@ -21,6 +27,7 @@ Lo normal es usar las dos: **Docker para correr la API** y el **entorno de Pytho
 | Visual Studio Code | https://code.visualstudio.com | Instala la extensión **Python** (Microsoft). |
 | Python 3.13 | https://www.python.org/downloads | Marca **"Add Python to PATH"** al instalar. |
 | Docker Desktop | https://www.docker.com/products/docker-desktop | Para la forma A. Debe estar abierto al usarlo. |
+| Node.js 20 o superior (LTS) | https://nodejs.org | Solo para la forma B (correr la interfaz sin Docker). |
 | MongoDB Compass (opcional) | https://www.mongodb.com/try/download/compass | Para ver los datos de la base. |
 | MongoDB Community Server | https://www.mongodb.com/try/download/community | Solo para la forma B. Deja marcado **"Install MongoD as a Service"**. |
 
@@ -75,24 +82,27 @@ docker compose up -d --build
 
 - La primera vez tarda unos minutos (descarga Python y MongoDB).
 - `-d` lo deja corriendo en segundo plano.
-- Revisa que esté arriba con `docker compose ps`: deben aparecer **adp-api** (`Up`) y **adp-mongo** (`Up (healthy)`).
+- Revisa que esté arriba con `docker compose ps`: deben aparecer **adp-web** (`Up`), **adp-api** (`Up`) y **adp-mongo** (`Up (healthy)`).
+- La primera vez, la interfaz tarda uno o dos minutos más en abrir porque instala sus dependencias (`npm install`). Puedes seguir el avance con `docker compose logs -f web`.
 
-Abre **http://127.0.0.1:8000/docs**.
+Abre la interfaz en **http://localhost:5173** o la API en **http://127.0.0.1:8000/docs**.
 
 | Para... | Comando |
 |---|---|
 | Ver los mensajes de la API | `docker compose logs -f api` (salir con Ctrl + C; no apaga nada) |
+| Ver los mensajes de la interfaz | `docker compose logs -f web` |
 | Apagar todo | `docker compose down` |
 | Volver a encender | `docker compose up -d` |
 | Reiniciar solo la API | `docker compose restart api` |
 | Reconstruir tras cambiar `requirements.txt` | `docker compose up -d --build` |
+| Reinstalar dependencias tras cambiar `frontend/package.json` | `docker compose restart web` |
 
 Notas:
-- Al guardar cambios en `app/` desde VS Code, la API se recarga sola.
+- Al guardar cambios en `app/` (API) o en `frontend/src/` (interfaz) desde VS Code, se recargan solos.
 - Los datos de MongoDB se guardan en el volumen `mongo_data` y **no se pierden** al apagar.
 - Los archivos subidos quedan en la carpeta `storage/` del proyecto (no se suben a GitHub).
 - MongoDB Compass se conecta con `mongodb://localhost:27017`. La base se llama `agente_documentacion_probatoria`.
-- No corras al mismo tiempo `uvicorn` local (puerto 8000) ni un MongoDB instalado en Windows (puerto 27017): chocan con Docker.
+- No corras al mismo tiempo `uvicorn` local (puerto 8000), `npm run dev` local (puerto 5173) ni un MongoDB instalado en Windows (puerto 27017): chocan con Docker.
 
 ---
 
@@ -115,6 +125,47 @@ uvicorn app.main:app --reload
 ```
 
 Abre **http://127.0.0.1:8000/docs**.
+
+Para la interfaz web, en **otra terminal** (con Node.js instalado):
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Abre **http://localhost:5173**. La API debe estar corriendo en el puerto 8000.
+
+---
+
+## 4C. La interfaz web (React + Vite)
+
+El código está en la carpeta `frontend/`:
+
+```
+frontend/
+  index.html             página base
+  vite.config.js         configuración de Vite y reenvío de /api a FastAPI
+  package.json           dependencias (React, Vite)
+  src/
+    main.jsx             punto de entrada
+    App.jsx              sesión del profesor y cambio de pantallas
+    api.js               todas las llamadas a la API (token, errores, descargas)
+    styles.css           estilos
+    components/
+      Acceso.jsx         iniciar sesión y crear cuenta
+      Documentos.jsx     expediente, subir documentos, lista y descarga
+```
+
+Cómo se conecta con la API: la interfaz llama a rutas que empiezan con `/api` (por ejemplo `/api/auth/login`) y Vite las reenvía a FastAPI quitando el `/api`. Por eso el navegador ve un solo origen y **no hace falta configurar CORS** en desarrollo. El destino se elige con la variable `API_URL` (en Docker es `http://api:8000`; sin Docker, `http://127.0.0.1:8000`).
+
+Qué se puede hacer en esta versión:
+1. Crear cuenta e iniciar sesión (el token se guarda en el navegador; al vencer, regresa al inicio de sesión con un aviso).
+2. Elegir un expediente o crear uno nuevo (título, categoría DOC/VIN/INV/GES y descripción).
+3. Subir uno o varios PDF, JPG o PNG (máximo 10 MB) arrastrándolos o con clic, con tipo de documento opcional. Cada archivo muestra si se subió o el motivo del error.
+4. Ver los documentos del expediente y descargarlos.
+
+> `package-lock.json` se genera la primera vez que se instala; súbanlo a GitHub para que todos usen las mismas versiones. `node_modules/` no se sube.
 
 ---
 
@@ -183,7 +234,7 @@ Cubren registro, inicio de sesión, perfil, validación, expedientes, documentos
 5. **Publica** con **Publish Branch** (o **Sync** si ya existe) y abre un **Pull Request** en GitHub.
 6. Otro integrante revisa y hace **Merge** a `main`.
 
-Nunca subas: `.env`, `.venv/`, `storage/documentos/` (ya están en `.gitignore`).
+Nunca subas: `.env`, `.venv/`, `storage/documentos/`, `node_modules/` (ya están en `.gitignore`).
 
 ---
 
@@ -197,6 +248,9 @@ Nunca subas: `.env`, `.venv/`, `storage/documentos/` (ya están en `.gitignore`)
 | Error al activar `.venv` | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | `port is already allocated` en Docker | Algo más usa el 8000 o el 27017: apaga `uvicorn` local o el servicio de MongoDB de Windows. |
 | Todo responde **401** | Token vencido o mal pegado: login de nuevo y Authorize con el token nuevo. |
+| http://localhost:5173 no abre | Espera a que termine `npm install` (`docker compose logs -f web`). |
+| La interfaz dice *"No hay conexión con el servidor"* | La API no está corriendo: revisa `docker compose ps` o enciende `uvicorn`. |
+| `npm` no se reconoce | Instala Node.js LTS y abre una terminal nueva (o usa Docker). |
 | `/docs` no refleja un cambio | `docker compose restart api` y recarga con **Ctrl + F5**. |
 
 ---
