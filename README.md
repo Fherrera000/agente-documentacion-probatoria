@@ -169,6 +169,55 @@ Qué se puede hacer en esta versión:
 
 ---
 
+## 4D. Análisis con IA (paquete 3.2)
+
+Cada documento que se sube se analiza **automáticamente** con **Gemini** (Google). La IA lee el archivo (PDF o imagen, incluso escaneado), y con los catálogos del paquete 2.1 obtiene:
+
+- tipo de documento (constancia, diploma, certificado…), categoría académica (DOC, VIN, INV, GES), actividad, institución emisora, fechas, horas y un resumen;
+- el **periodo académico** (2026-1, 2026-2, MULTI, S/P…), que lo calcula el sistema a partir de las fechas, no la IA;
+- la **confianza** y los **motivos de revisión**.
+
+Después, el backend **verifica** la respuesta contra el texto del documento (riesgo R03 de OpenProject): si la IA da un título o una institución que no aparece en el documento, cita una evidencia que no existe, propone algo fuera de catálogo o tiene confianza menor a 70 %, el documento queda como **"Requiere revisión"**.
+
+### Activarla
+1. Crea una llave en **https://aistudio.google.com/apikey** (con tu cuenta de Google).
+2. En tu archivo **`.env`** agrega: `GEMINI_API_KEY=tu_llave` (nunca en `.env.example`).
+3. Reconstruye: `docker compose up -d --build` (la primera vez instala las librerías nuevas de IA).
+4. En la interfaz, los documentos subidos antes de tener llave dicen **"IA sin configurar"**: presiona **Analizar de nuevo**.
+
+| Variable en `.env` | Para qué |
+|---|---|
+| `GEMINI_API_KEY` | Llave de Google AI Studio. |
+| `GEMINI_MODEL` | Modelo a usar (por defecto `gemini-3.8-flash`). Si Google retira un modelo, la API responde *404 "no longer available"*: cámbialo aquí por el que recomiende el mensaje. |
+| `IA_ANALISIS_AUTOMATICO` | `true` analiza al subir; `false` solo con el botón *Analizar de nuevo*. |
+| `GEMINI_MODELOS_RESPALDO` | Modelos que se prueban, en orden, si el principal está saturado (503), sin cuota (429) o no disponible (404). Por defecto `gemini-3.6-flash,gemini-3.5-flash-lite`. |
+| `GEMINI_TIMEOUT_SEGUNDOS` | Tiempo máximo de espera por respuesta de Gemini (por defecto 60). |
+
+Para usar **Vertex AI** (Google Cloud, como en el plan) en lugar de la llave: deja `GEMINI_API_KEY` vacío y define `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT` y `GOOGLE_CLOUD_LOCATION`. El código no cambia.
+
+### Estados del análisis
+
+| Estado en la interfaz | Significado |
+|---|---|
+| En cola / Analizando… | La IA está trabajando; la lista se actualiza sola. |
+| Analizado | Todo verificado y con confianza suficiente. |
+| Requiere revisión | Hay motivos para que una persona lo revise (*Ver análisis* los muestra). La corrección llega con el paquete 4.1. |
+| Error de análisis | Falló la llamada. Debajo se muestra el motivo (por ejemplo *"Los servidores de Gemini están saturados"*, error 503 de Google, que es temporal). *Analizar de nuevo* en unos minutos. |
+| Sin analizar | Se subió antes de existir el análisis con IA. *Analizar de nuevo*. |
+| IA sin configurar | Falta `GEMINI_API_KEY`. |
+
+### ⚠️ Privacidad
+Con una llave **gratuita** de AI Studio, Google puede usar el contenido enviado para mejorar sus productos. Por el Plan de Manejo de la Privacidad y la LFPDPPP, **con la llave gratuita usen solo documentos de prueba, sintéticos o anonimizados**. Para documentos reales de docentes se debe usar un plan de pago o Vertex AI, que no usan los datos para entrenar.
+
+### Rutas nuevas de la API
+- `GET /documentos/{id}`: detalle con el análisis y el texto extraído.
+- `POST /documentos/{id}/analizar`: vuelve a analizar (responde 202 y trabaja en segundo plano).
+- `GET /documentos` ahora incluye `analisis_estado` y `analisis` de cada documento.
+
+Las pruebas automáticas **nunca llaman a Gemini** (aunque tengas la llave en `.env`): usan un analizador simulado (`tests/conftest.py`).
+
+---
+
 ## 5. Probar la API en `/docs`
 
 1. **`GET /database`** › *Try it out* › *Execute*. Debe responder `{"mongodb": "conectado"}`.
@@ -221,7 +270,7 @@ Todas deben salir **PASSED**. Para una sola prueba:
 python -m pytest tests/test_api.py::test_profesor_no_puede_consultar_expediente_de_otro -v
 ```
 
-Cubren registro, inicio de sesión, perfil, validación, expedientes, documentos, carga y descarga, el esquema de Authorize y el aislamiento entre profesores. Cada función nueva debe llevar su prueba.
+Cubren registro, inicio de sesión, perfil, validación, expedientes, documentos, carga y descarga, el esquema de Authorize, el aislamiento entre profesores y el análisis con IA (`tests/test_analisis.py`: catálogos, periodos, detección de datos inventados, errores de la IA y duplicados). Cada función nueva debe llevar su prueba.
 
 ---
 
@@ -252,6 +301,8 @@ Nunca subas: `.env`, `.venv/`, `storage/documentos/`, `node_modules/` (ya están
 | La interfaz dice *"No hay conexión con el servidor"* | La API no está corriendo: revisa `docker compose ps` o enciende `uvicorn`. |
 | `npm` no se reconoce | Instala Node.js LTS y abre una terminal nueva (o usa Docker). |
 | `/docs` no refleja un cambio | `docker compose restart api` y recarga con **Ctrl + F5**. |
+| Todos los documentos dicen *"IA sin configurar"* | Falta `GEMINI_API_KEY` en `.env`, o no reconstruiste: `docker compose up -d --build`. |
+| *"Error de análisis"* | Revisa `docker compose logs api`: puede ser llave inválida, cuota agotada o modelo no disponible (`404 ... no longer available`: cambia `GEMINI_MODEL` en `.env` y corre `docker compose up -d --force-recreate api`). |
 
 ---
 
@@ -266,7 +317,7 @@ Nunca subas: `.env`, `.venv/`, `storage/documentos/`, `node_modules/` (ya están
 - El `profesor_id` no se recibe en las rutas: se obtiene del JWT validado.
 - Las consultas de expedientes y documentos siempre incluyen el `profesor_id` autenticado.
 - La contraseña se almacena con hash Argon2, nunca en texto plano.
-- Todavía no hay OCR ni análisis con IA de los documentos.
+- Los documentos se envían a Gemini para analizarlos; revisa la nota de privacidad de la sección 4D.
 - Es un punto de partida para desarrollo local, no una versión lista para producción. Antes de usar datos reales se deben añadir HTTPS, gestión segura de secretos, recuperación de cuenta, límites de intentos, auditoría, almacenamiento privado y más pruebas de acceso cruzado entre profesores.
 - El dataset sintético debe permanecer separado en `dataset_documentos`; no mezclarlo con los expedientes privados.
 

@@ -96,6 +96,9 @@ export const api = {
     if (tipoDocumento) datos.append("tipo_documento", tipoDocumento);
     return peticion("/documentos/subir", { metodo: "POST", formulario: datos });
   },
+  obtenerDocumento: (documentoId) => peticion(`/documentos/${encodeURIComponent(documentoId)}`),
+  analizarDocumento: (documentoId) =>
+    peticion(`/documentos/${encodeURIComponent(documentoId)}/analizar`, { metodo: "POST" }),
   descargarDocumento: (documentoId) =>
     peticion(`/documentos/${encodeURIComponent(documentoId)}/descargar`, { comoArchivo: true }),
 };

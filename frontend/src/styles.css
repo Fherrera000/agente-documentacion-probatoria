@@ -82,9 +82,30 @@ th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacin
   border-bottom: 1px solid var(--linea); padding: 8px; }
 td { border-bottom: 1px solid #ece9e0; padding: 10px 8px; vertical-align: middle; }
 td.archivo { font-weight: 600; overflow-wrap: anywhere; }
-.etiqueta { background: var(--verde-suave); color: var(--verde); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.etiqueta { display: inline-block; white-space: nowrap; background: var(--verde-suave); color: var(--verde); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
 
 @media (max-width: 600px) {
   .usuario span { display: none; }
   th:nth-child(3), td:nth-child(3) { display: none; }
 }
+
+/* Paquete 3.2: resultados del análisis con IA */
+td.archivo small { font-weight: 400; margin-top: 2px; }
+td small { margin-top: 4px; }
+.etiqueta.info { background: var(--azul-suave); color: var(--azul); }
+.etiqueta.ok { background: var(--verde-suave); color: var(--verde); }
+.etiqueta.aviso { background: var(--naranja-suave); color: var(--naranja); }
+.etiqueta.error { background: var(--rojo-suave); color: var(--rojo); }
+.etiqueta.neutro { background: #eceae3; color: var(--tenue); }
+.acciones-fila { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.acciones-fila button { padding: 6px 10px; font-size: 13px; }
+tr.detalle td { background: #fbfaf6; }
+.analisis { display: grid; gap: 12px; padding: 4px 4px 8px; }
+.analisis .resumen { margin: 0; font-size: 15px; }
+.analisis ul { margin: 6px 0 0; padding-left: 18px; }
+.analisis dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; margin: 0; }
+.analisis dt { font-size: 12px; color: var(--tenue); }
+.analisis dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.analisis .evidencia { margin: 0; font-size: 14px; background: var(--azul-suave); border-radius: 8px; padding: 8px 12px; }
+.analisis .pie { margin: 0; font-size: 12px; }
+.error-texto { color: var(--rojo); max-width: 260px; }

@@ -2,13 +2,15 @@ from datetime import datetime, timezone
 import hashlib
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.config.database import base_datos
+from app.config.settings import configuracion
 from app.schemas.documento import DocumentoCrear
 from app.security.auth import obtener_profesor_actual
 from app.services.almacenamiento import guardar_archivo, resolver_archivo
+from app.services.analisis import procesar_documento
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
 
@@ -29,6 +31,7 @@ def registrar_documento(datos: DocumentoCrear, profesor=Depends(obtener_profesor
 
 @router.post("/subir", status_code=201)
 async def subir_documento(
+    background_tasks: BackgroundTasks,
     expediente_id: str = Form(...),
     archivo: UploadFile = File(...),
     tipo_documento: str | None = Form(default=None),
@@ -57,11 +60,16 @@ async def subir_documento(
             "fecha_carga": datetime.now(timezone.utc),
             "estado": "cargado",
             "archivo_subido": True,
+            "analisis_estado": "pendiente",
         }
         resultado = base_datos.documentos.insert_one(documento)
     except Exception:
         guardado["ruta"].unlink(missing_ok=True)
         raise
+
+    # Paquete 3.2: la IA analiza el documento en segundo plano; la carga responde de inmediato.
+    if configuracion.ia_analisis_automatico:
+        background_tasks.add_task(procesar_documento, resultado.inserted_id)
 
     return {
         "id": str(resultado.inserted_id),
@@ -70,6 +78,7 @@ async def subir_documento(
         "tamano_bytes": documento["tamano_bytes"],
         "content_type": documento["content_type"],
         "estado": documento["estado"],
+        "analisis_estado": documento["analisis_estado"],
     }
 
 
@@ -81,7 +90,64 @@ def listar_documentos(expediente_id: str | None = None, profesor=Depends(obtener
             raise HTTPException(status_code=400, detail="ID de expediente inválido")
         filtro["expediente_id"] = ObjectId(expediente_id)
     documentos = base_datos.documentos.find(filtro).sort("fecha_carga", -1)
-    return [{"id": str(d["_id"]), "nombre_archivo": d["nombre_archivo"], "expediente_id": str(d["expediente_id"]), "tipo_documento": d.get("tipo_documento"), "estado": d["estado"], "archivo_subido": d.get("archivo_subido", False), "fecha_carga": d["fecha_carga"].isoformat()} for d in documentos]
+    return [presentar_documento(d) for d in documentos]
+
+
+def fecha_iso(fecha: datetime | None) -> str | None:
+    """MongoDB devuelve las fechas en UTC sin zona horaria; se la agregamos para que
+    el navegador las muestre en la hora local correcta."""
+    if not fecha:
+        return None
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=timezone.utc)
+    return fecha.isoformat()
+
+
+def presentar_documento(d: dict, detalle: bool = False) -> dict:
+    datos = {
+        "id": str(d["_id"]),
+        "nombre_archivo": d["nombre_archivo"],
+        "expediente_id": str(d["expediente_id"]),
+        "tipo_documento": d.get("tipo_documento"),
+        "estado": d["estado"],
+        "archivo_subido": d.get("archivo_subido", False),
+        "fecha_carga": fecha_iso(d["fecha_carga"]),
+        # Resultado de la IA (paquete 3.2). Los documentos subidos antes de existir
+        # el análisis no tienen el campo: se muestran como "sin_analizar".
+        "analisis_estado": d.get("analisis_estado", "sin_analizar" if d.get("archivo_subido") else None),
+        "analisis": d.get("analisis"),
+        "analisis_error": d.get("analisis_error"),
+    }
+    if detalle:
+        datos["texto_extraido"] = d.get("texto_extraido")
+        datos["fecha_analisis"] = fecha_iso(d.get("fecha_analisis"))
+    return datos
+
+
+def buscar_documento_propio(documento_id: str, profesor: dict) -> dict:
+    if not ObjectId.is_valid(documento_id):
+        raise HTTPException(status_code=400, detail="ID de documento inválido")
+    documento = base_datos.documentos.find_one({"_id": ObjectId(documento_id), "profesor_id": profesor["_id"]})
+    if not documento:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return documento
+
+
+@router.get("/{documento_id}")
+def obtener_documento(documento_id: str, profesor=Depends(obtener_profesor_actual)):
+    """Detalle de un documento propio, con el análisis de la IA y el texto extraído."""
+    return presentar_documento(buscar_documento_propio(documento_id, profesor), detalle=True)
+
+
+@router.post("/{documento_id}/analizar", status_code=202)
+def analizar_documento(documento_id: str, background_tasks: BackgroundTasks, profesor=Depends(obtener_profesor_actual)):
+    """Vuelve a analizar un documento con la IA (por ejemplo, después de configurar la llave)."""
+    documento = buscar_documento_propio(documento_id, profesor)
+    if not documento.get("archivo_subido"):
+        raise HTTPException(status_code=409, detail="El documento no tiene archivo para analizar")
+    base_datos.documentos.update_one({"_id": documento["_id"]}, {"$set": {"analisis_estado": "pendiente", "analisis_error": None}})
+    background_tasks.add_task(procesar_documento, documento["_id"])
+    return {"id": documento_id, "analisis_estado": "pendiente"}
 
 
 @router.get("/{documento_id}/descargar")
